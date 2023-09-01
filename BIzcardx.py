@@ -1,119 +1,137 @@
-#importing libraries
 import streamlit as st
 import easyocr
 import mysql.connector
 import cv2
-import numpy as np
+import numpy as np 
 import pandas as pd
+from mysql.connector import Error
 
-#connect to MySql database
-mydb = mysql.connector.connect(host="localhost",
-                   user="root",
-                   password="6699",
-                   database = "BizCard",
-                   )
-#create cursor object to execute SQL queries
-mycursor = mydb.cursor(buffered=True)
+# Connect to MySQL database
+mydb = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="6699",
+    database="ocr")
 
-#Create a table to store the business card information
-mycursor.execute('''CREATE TABLE IF NOT EXISTS Business_card 
-                     (id INT AUTO_INCREMENT PRIMARY KEY,
-                     name TEXT,
-                     position TEXT,
-                     address TEXT,
-                     pincode VARCHAR(25),
-                     phone VARCHAR(25),
-                     email TEXT,
-                     website TEXT,
-                     company TEXT
-                     )''')
+# Create a cursor object to execute SQL queries
+mycursor = mydb.cursor()
 
-# Using easyOCR for reading data
+# Create a table to store the business card information
+mycursor.execute("CREATE TABLE IF NOT EXISTS bus (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), job_title VARCHAR(255), address VARCHAR(255), postcode VARCHAR(255), phone VARCHAR(255), email VARCHAR(255), website VARCHAR(255), company_name VARCHAR(225))")
+
+# Create an OCR object to read text from the image
 reader = easyocr.Reader(['en'])
 
-# Set the title and page icon
-st.set_page_config(page_title="BIZCARD-X", page_icon=":credit_card:")
 
+st.markdown(
+         f"""
+         <style>
+         .stApp {{
+             background-image: url("https://cdn.wallpapersafari.com/53/63/pnd4MG.jpg");
+             background-attachment: fixed;
+             background-size: cover
+         }}
+         </style>
+         """,
+         unsafe_allow_html=True
+         
+        )
+#display 
+st.title(":blue[Extracting Business Card Data with OCR]")
 
-# Title 
-st.title(":Blue[OCR Tool For Extracting Card Data:credit_card:]")
+# Create a file uploader widget
+uploaded_file = st.file_uploader("Upload a business card image", type=["jpg", "jpeg", "png"])
 
-# Create a file uploader
-file_upload = st.file_uploader(":orange[UPLOAD CARD IMAGE>>>:credit_card:]", type=["jpg", "jpeg", "png"])
+# Create a sidebar menu with options to add, view, update, and delete business card information
+menu = ['Add', 'View', 'Update', 'Delete']
+choice = st.sidebar.selectbox("Select an option", menu)
 
-
-# Create a sidebar menu with options to Add, Show, Update business card information
-st.sidebar.title(":Blue[BIZCARD-X:star:]")
-st.sidebar.image("https://miro.medium.com/v2/resize:fit:1400/0*V7NS3dvYQLVi6DFL.gif", width=300)
-
-
-m = ['Insert Data', 'Show Data', 'Edit Card Info']
-choose = st.sidebar.selectbox("Select An Option", m)
-
-
-if choose == 'Insert Data':
-    if file_upload is not None:
-        
+if choice == 'Add':
+    if uploaded_file is not None:
         # Read the image using OpenCV
-        image = cv2.imdecode(np.fromstring(file_upload.read(), np.uint8), 1)
-        
+        image = cv2.imdecode(np.fromstring(uploaded_file.read(), np.uint8), 1)
         # Display the uploaded image
-        st.image(image, caption='Uploaded Successfully', use_column_width=True)
-        
-        # Button to extract information from the image
-        if st.button('Extract Data And Append'):
-            bsc = reader.readtext(image, detail=0)
-            text = "\n".join(bsc)
-            
+        st.image(image, caption='Uploaded business card image', use_column_width=True)
+        # Create a button to extract information from the image
+        if st.button('Extract Information'):
+            # Call the function to extract the information from the image
+            bounds = reader.readtext(image, detail=0)
+            # Convert the extracted information to a string
+            text = "\n".join(bounds)
             # Insert the extracted information and image into the database
-            sql_data = "INSERT INTO Business_card (name, position, address, pincode, phone, email, website, company) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?)"
-            values = (bsc[0], bsc[1], bsc[2], bsc[3], bsc[4], bsc[5], bsc[6], bsc[7])
-            mycursor.execute(sql_data, values)
+            sql = "INSERT INTO bus(name, job_title, address, postcode, phone, email, website, company_name) VALUES ( %s, %s, %s, %s, %s, %s, %s, %s)"
+            val = (bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5], bounds[6], bounds[7])
+            mycursor.execute(sql, val)
             mydb.commit()
-            
-            # Display message
-            st.success("Card Data Inserted")
-
-elif choose == 'Show Data':
-    
+            # Display a success message
+            st.success("Business card information added to database.")
+elif choice == 'View':
     # Display the stored business card information
-    mycursor.execute("SELECT * FROM Business_card")
+    mycursor.execute("SELECT * FROM bus")
     result = mycursor.fetchall()
-    df = pd.DataFrame(result, columns=['id','name', 'position', 'address', 'pincode', 'phone', 'email', 'website', 'company'])
+    df = pd.DataFrame(result, columns=['id','name', 'job_title', 'address', 'postcode', 'phone', 'email', 'website', 'company_name'])
     st.write(df)
 
-
-elif choose == 'Edit Card Info':
-    
-    # Create a dropdown menu to select a business card to edit
-    mycursor.execute("SELECT id, name FROM Business_card")
+elif choice == 'Update':
+    # Create a dropdown menu to select a business card to update
+    mycursor.execute("SELECT id, name FROM bus")
     result = mycursor.fetchall()
     business_cards = {}
-    
     for row in result:
         business_cards[row[1]] = row[0]
-    select_card_name = st.selectbox("Select Card To Edit", list(business_cards.keys()))
+    selected_card_name = st.selectbox("Select a business card to update", list(business_cards.keys()))
     
     # Get the current information for the selected business card
-    mycursor.execute("SELECT * FROM Business_card WHERE name=?", (select_card_name,))
+    mycursor.execute("SELECT * FROM bus WHERE name=%s", (selected_card_name,))
     result = mycursor.fetchone()
 
-    # Get edited information 
+    # Display the current information for the selected business card
+    st.write("Name:", result[1])
+    st.write("Job Title:", result[2])
+    st.write("Address:", result[3])
+    st.write("Postcode:", result[4])
+    st.write("Phone:", result[5])
+    st.write("Email:", result[6])
+    st.write("Website:", result[7])
+    st.write("company_name:", result[8])
+
+    # Get new information for the business card
     name = st.text_input("Name", result[1])
-    position = st.text_input("Position", result[2])
+    job_title = st.text_input("Job Title", result[2])
     address = st.text_input("Address", result[3])
-    pincode = st.text_input("Pincode", result[4])
+    postcode = st.text_input("Postcode", result[4])
     phone = st.text_input("Phone", result[5])
     email = st.text_input("Email", result[6])
     website = st.text_input("Website", result[7])
-    company = st.text_input("Company_Name", result[8])
+    company_name = st.text_input("Company Name", result[8])
 
-    
     # Create a button to update the business card
-    if st.button("Edit Card Data"):
-        
+    if st.button("Update Business Card"):
         # Update the information for the selected business card in the database
-        mycursor.execute("UPDATE Business_card SET name=?, position=?, address=?, pincode=?, phone=?, email=?, website=?, company=? WHERE name=?", 
-                             (name, position, address, pincode, phone, email, website, company, select_card_name))
+        mycursor.execute("UPDATE bus SET name=%s, job_title=%s, address=%s, postcode=%s, phone=%s, email=%s, website=%s, company_name=%s WHERE name=%s", 
+                             (name, job_title, address, postcode, phone, email, website, company_name, selected_card_name))
         mydb.commit()
-        st.success("Card Data Updated")
+        st.success("Business card information updated in database.")
+elif choice == 'Delete':
+    # Create a dropdown menu to select a business card to delete
+    mycursor.execute("SELECT id, name FROM bus")
+    result = mycursor.fetchall()
+    business_cards = {}
+    for row in result:
+        business_cards[row[0]] = row[1]
+    selected_card_id = st.selectbox("Select a business card to delete", list(business_cards.keys()), format_func=lambda x: business_cards[x])
+
+    # Get the name of the selected business card
+    mycursor.execute("SELECT name FROM bus WHERE id=%s", (selected_card_id,))
+    result = mycursor.fetchone()
+    selected_card_name = result[0]
+
+    # Display the current information for the selected business card
+    st.write("Name:", selected_card_name)
+    # Display the rest of the information for the selected business card
+
+    # Create a button to confirm the deletion of the selected business card
+    if st.button("Delete Business Card"):
+        mycursor.execute("DELETE FROM bus WHERE name=%s", (selected_card_name,))
+        mydb.commit()
+        st.success("Business card information deleted from database.")
